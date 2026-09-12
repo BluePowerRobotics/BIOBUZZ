@@ -10,7 +10,7 @@ import org.firstinspires.ftc.teamcode.Processors.RobotPosition.RobotPosition;
 import org.firstinspires.ftc.teamcode.RoadRunner.MecanumDrive;
 
 /**
- * 停车Action：使用RoadRunner轨迹前往StopPose，同时将炮台复位到0度并停车
+ * 停车Action：使用RoadRunner轨迹前往StopPose并停车
  */
 public class GoToStopPose implements Action {
     private final Action trajectoryAction;

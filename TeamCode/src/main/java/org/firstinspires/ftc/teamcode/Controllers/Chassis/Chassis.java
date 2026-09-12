@@ -16,8 +16,6 @@
 @Config
 public class Chassis {
 
-    private final double maxV = HypParams.maxV;
-    private final double maxOmega = HypParams.maxOmega;
     private final MecanumDrive drive;
     private final ActionRunner actionRunner;
     private boolean useNoHeadMode = HypParams.InitialUseNoHeadMode;
@@ -74,9 +72,9 @@ public class Chassis {
             // 摇杆 → 底盘速度映射：Ky/Kx 取反以匹配 FTC SDK 手柄惯例（上推为负、右推为正）
             // 官方 SDK: forward = -gamepad1.left_stick_y, strafe = gamepad1.left_stick_x
             // Road Runner: PoseVelocity2d.y 正值 = 向左横移，故 strafe 也需取反
-            double forwardVel = -Ky * maxV;
-            double strafeVel = -Kx * maxV;
-            double omega = -Komega * maxOmega;
+            double forwardVel = -Ky;
+            double strafeVel = -Kx;
+            double omega = -Komega;
             if(useNoHeadMode){
                 // 操作手基础朝向：BLUE 面向 -pi/2 (y-为前), RED 面向 pi/2 (y+为前)
                 double driverHeading = (teamColor == TeamColor.RED) ? Math.PI / 2 : -Math.PI / 2;
