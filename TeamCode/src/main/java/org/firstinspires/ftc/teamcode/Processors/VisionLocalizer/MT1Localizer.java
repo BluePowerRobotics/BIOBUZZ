@@ -30,6 +30,29 @@ import java.util.List;
  *   }
  * }</pre>
  */
+
+/*
+todo:
+1. 添加limelight标签结果的详细读取，TeamColor配置与apriltag map上传
+2. 根据读取结果实现本方hive状态估计，具体算法：
+    1.保留置信度较高（skew<阈值）的标签结果，按cell分为两组
+    2.计算每组标签相对位姿高度的均值，作为对应cell的高度
+    3.根据cell高度估测蜂巢状态为：Audience_UP，Audience_DOWN，MIDDLE
+    判断规则：一组tag高度高于tag_up_threshold，另一组未识别到或低于tag_down_threshold，则为该组抬升，否则为MIDDLE
+    4.连续 N 帧满足新状态才确认切换
+   若无读取结果，则保持上一次状态
+3. 根据估测的蜂巢状态，实时更新定位算法的apriltag map：
+    1. Audience_UP：若与当前map不同，替换为Audience_UP_map
+    2. Audience_DOWN：若与当前map不同，替换为Audience_DOWN_map
+    3. MIDDLE：拒绝视觉更新，输出为无效
+4. 添加自动/手动模式切换，允许外部手动设置hive状态，强制使用对应的apriltag map进行定位
+5. 提供接口实时传出当前估计状态与当前观测结果：
+    - MAINTAINING: 无法观测到任何标签，保持上一次状态
+    - Audience_UP: 观测到的标签高度符合Audience_UP状态
+    - Audience_DOWN: 观测到的标签高度符合Audience_DOWN状态
+    - MIDDLE: 观测到的标签高度不符合任何状态，无法确定
+ */
+
 public class MT1Localizer implements Localizer {
 
     private final Limelight3A limelight;

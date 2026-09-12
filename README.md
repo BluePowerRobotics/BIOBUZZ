@@ -1,7 +1,7 @@
-# Team19725_......赛季
+# Team19725_BIOBUZZ赛季
 
-FTC19725的......赛季代码\
-FTC ......, team code for 19725, BluePowerRobotics
+FTC19725的BIOBUZZ赛季代码\
+FTC BIOBUZZ, team code for 19725, BluePowerRobotics
 
 程序框架：\
 主程序：\

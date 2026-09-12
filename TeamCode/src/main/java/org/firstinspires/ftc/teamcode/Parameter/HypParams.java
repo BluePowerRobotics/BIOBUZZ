@@ -11,6 +11,7 @@ import org.firstinspires.ftc.teamcode.utility.Vector2D;
  * 全局超参数配置类
  * 用于集中管理机器人控制系统中的所有超参数，超参应为无需拟合的常量，如工程参数等
  */
+//todo：添加球门位置、hive初始状态、hive高度阈值等超参
 public class HypParams {
     /**
      * 底盘最大速度（英寸/秒）

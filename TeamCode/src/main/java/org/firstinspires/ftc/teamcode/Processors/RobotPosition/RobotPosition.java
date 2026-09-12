@@ -18,6 +18,8 @@ import org.firstinspires.ftc.teamcode.RoadRunner.MecanumDrive;
 import org.firstinspires.ftc.teamcode.utility.Geometry.ConvexPolygon;
 import org.firstinspires.ftc.teamcode.Parameter.HypParams;
 import org.firstinspires.ftc.teamcode.utility.filter.EMA;
+
+//todo：改为Adaptive EKF，并通过MT1Localizer估计hive状态
 @Config
 public class RobotPosition {
     static MecanumDrive drive;

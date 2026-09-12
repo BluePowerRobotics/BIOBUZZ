@@ -44,6 +44,8 @@ import org.firstinspires.ftc.teamcode.utility.filter.EKF.EKF;
  *
  * <p><b>R 自适应</b>: MT1 各方向 stdDev → 各方向独立 R 矩阵
  */
+
+//todo：透传MT1Localizer的hive状态估计和模式/状态设置接口
 @Config
 public class AdaptiveEKFLocalizer implements Localizer {
 

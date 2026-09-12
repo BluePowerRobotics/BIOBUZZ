@@ -12,7 +12,11 @@
  import org.firstinspires.ftc.teamcode.utility.ActionRunner;
  import org.firstinspires.ftc.teamcode.Parameter.HypParams;
  import org.firstinspires.ftc.teamcode.Parameter.TeamColor;
-
+/*
+todo：
+1. 根据定位与球门位置，实现一键转向球门瞄准
+2. 瞄准状态下，一操右摇杆失效，左摇杆前后控制前进后退，左摇杆左右控制底盘绕球门旋转（始终指向球门）
+ */
 @Config
 public class Chassis {
 
