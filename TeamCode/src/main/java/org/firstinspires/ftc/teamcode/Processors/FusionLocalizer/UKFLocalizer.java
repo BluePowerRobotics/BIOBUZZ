@@ -25,7 +25,9 @@ import org.firstinspires.ftc.teamcode.utility.filter.UKF.UKF;
  * <p>作为<b>固定权重对照组</b>，与 {@link AdaptiveUKFLocalizer} 的区别：
  * <ul>
  *   <li>Q 与 R 均为固定值（构造时默认值，每帧重写），不做 IMU/视觉自适应</li>
- *   <li>视觉更新不做马氏距离门控，仅做有效性过滤</li>
+ *   <li>视觉更新不做马氏距离门控，仅做有效性过滤
+ *       ({@link MT1Localizer#isValid()} 且 {@link MT1Localizer#isHiveEstimated()}，
+ *       后者为 false 时 {@code MT1Localizer#getPose()} 会回退为受污染的原始位姿)</li>
  *   <li>不需要 IMU 硬件 (D2 模式)</li>
  * </ul>
  *
@@ -129,7 +131,10 @@ public class UKFLocalizer implements Localizer {
 
         // ---- 4. MT1 视觉 → UKF 更新 (固定 R, 无门控, 仅有效性过滤) ----
         mt1.update();
-        if (mt1.isValid()) {
+        // 与 AdaptiveUKFLocalizer 保持一致: isHiveEstimated() 为 false 表示该帧 HIVE 解算失败或被拒
+        // (无标签 / 无解 / 取根超 CellUpAngle / 姿态交叉校验不通过 / 枢轴高度未标定),
+        // 此时 mt1.getPose() 是未经修正的受污染位姿, 不可作为观测量
+        if (mt1.isValid() && mt1.isHiveEstimated()) {
             Pose2d visionPose = mt1.getPose();              // (英寸, 英寸, 弧度)
             ukf.update(
                     visionPose.position.x,                  // 英寸

@@ -43,6 +43,11 @@ import org.firstinspires.ftc.teamcode.utility.filter.UKF.UKF;
  * </ul>
  *
  * <p><b>R 自适应</b>: MT1 各方向 stdDev → 各方向独立 R 矩阵
+ *
+ * <p><b>视觉门控</b>: 仅当 {@link MT1Localizer#isValid()} 与 {@link MT1Localizer#isHiveEstimated()}
+ * 同时为 true 时才进入 R 自适应与马氏距离门控。后者为 false 说明该帧 HIVE 倾角无解或被拒
+ * (无标签 / 无解 / 取根超 CellUpAngle / 姿态交叉校验不通过 / 枢轴高度未标定),
+ * 此时 {@code MT1Localizer#getPose()} 回退为未经修正的受污染位姿, 必须整帧丢弃。
  */
 @Config
 public class AdaptiveUKFLocalizer implements Localizer {
@@ -194,7 +199,9 @@ public class AdaptiveUKFLocalizer implements Localizer {
 
         // ---- 4. MT1 视觉 → 自适应 R 矩阵 + 门控 + UKF 更新 ----
         mt1.update();
-        if (mt1.isValid()) {
+        // isHiveEstimated() 为 false 表示该帧 HIVE 解算失败或被拒 (无标签 / 无解 / 取根超 CellUpAngle /
+        // 姿态交叉校验不通过 / 枢轴高度未标定), 此时 mt1.getPose() 是未经修正的受污染位姿, 直接丢弃
+        if (mt1.isValid() && mt1.isHiveEstimated()) {
             ukf.setR(adaptR());
             Pose2d visionPose = mt1.getPose();              // (英寸, 英寸, 弧度)
             if (ukf.gateVision(

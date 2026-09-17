@@ -3,12 +3,15 @@ package org.firstinspires.ftc.teamcode.OpModes;
 import com.acmerobotics.dashboard.FtcDashboard;
 import com.acmerobotics.dashboard.config.Config;
 import com.acmerobotics.dashboard.telemetry.MultipleTelemetry;
+import com.acmerobotics.dashboard.telemetry.TelemetryPacket;
 import com.acmerobotics.roadrunner.Pose2d;
 import com.qualcomm.hardware.limelightvision.Limelight3A;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 
+import org.firstinspires.ftc.teamcode.Parameter.HypParams;
 import org.firstinspires.ftc.teamcode.Processors.VisionLocalizer.MT1Localizer;
+import org.firstinspires.ftc.teamcode.RoadRunner.Drawing;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -77,7 +80,30 @@ public class MT1Test extends LinearOpMode {
                 telemetry.addLine("No valid pose");
             }
             telemetry.addData("Tag Count", mt1.getTagCount());
+            telemetry.addData("Fiducial IDs", mt1.getTagIds());
             telemetry.addData("Ambiguity (m)", "%.4f", mt1.getAmbiguity());
+
+            // ---- HIVE 观测 (倾角 / 瞬时状态 / 贴地残差) ----
+            Pose2d rawPose = mt1.getRawPose();
+            telemetry.addLine();
+            telemetry.addLine("--- HIVE Observation ---");
+            telemetry.addData("Estimated", mt1.isHiveEstimated());
+            telemetry.addData("Hive State", mt1.getHiveState());
+            telemetry.addData("Hive Angle (deg)", "%.2f", Math.toDegrees(mt1.getHiveAngle()));
+            telemetry.addData("Pitch Check Err (deg)", "%.2f", mt1.getHivePitchCheckErrDeg());
+            telemetry.addData("Pivot Height (in)", "%.2f", HypParams.hivePivotHeightIn);
+
+            // ---- 原始位姿 vs 修正位姿 ----
+            telemetry.addLine();
+            telemetry.addLine("--- Raw vs Corrected ---");
+            telemetry.addData("Raw X / Y (in)", "%.2f / %.2f", rawPose.position.x, rawPose.position.y);
+            telemetry.addData("Raw Heading (deg)", "%.2f", Math.toDegrees(rawPose.heading.toDouble()));
+            telemetry.addData("Raw Z (in)", "%.2f", mt1.getRawZIn());
+            telemetry.addData("Raw Pitch (deg)", "%.2f", Math.toDegrees(mt1.getRawPitch()));
+            telemetry.addData("ΔX / ΔY (in)",
+                    "%.2f / %.2f", pose.position.x - rawPose.position.x, pose.position.y - rawPose.position.y);
+            telemetry.addData("ΔHeading (deg)", "%.2f",
+                    Math.toDegrees(pose.heading.toDouble() - rawPose.heading.toDouble()));
 
             // ---- A 键边沿触发：开始记录 ----
             boolean a = gamepad1.a;
@@ -120,6 +146,22 @@ public class MT1Test extends LinearOpMode {
             }
 
             telemetry.update();
+
+            // ---- Dashboard 场地视图绘制 ----
+            TelemetryPacket packet = new TelemetryPacket();
+            // 原始位姿（未做 HIVE 倾角修正）— 橙色
+            if (mt1.isValid()) {
+                packet.fieldOverlay().setStroke("#FF9800");
+                packet.fieldOverlay().setStrokeWidth(2);
+                Drawing.drawRobot(packet.fieldOverlay(), rawPose);
+            }
+            // 修正位姿（HIVE 贴地修正后）— 绿色
+            if (mt1.isHiveEstimated()) {
+                packet.fieldOverlay().setStroke("#4CAF50");
+                packet.fieldOverlay().setStrokeWidth(2);
+                Drawing.drawRobot(packet.fieldOverlay(), pose);
+            }
+            FtcDashboard.getInstance().sendTelemetryPacket(packet);
         }
     }
 

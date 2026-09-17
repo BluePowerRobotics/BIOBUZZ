@@ -51,6 +51,10 @@ import java.util.List;
  *   <li>蓝色 — AdaptiveUKFLocalizer</li>
  *   <li>红色虚线 — TestPose (目标点)</li>
  * </ul>
+ *
+ * <p>注意: MT1 的轨迹、当前位姿与误差只在 HIVE 倾角解算成功
+ * ({@code isValid() && isHiveEstimated()}) 时才记录/绘制 —— 解算失败时
+ * {@code MT1Localizer#getPose()} 会回退为未经修正的受污染位姿。
  */
 @Config
 @TeleOp(name = "Fusion Test", group = "Fusion")
@@ -149,9 +153,15 @@ public class FusionTestOpMode extends LinearOpMode {
             Pose2d ukfPose         = ukf.getPose();
             Pose2d adaptiveUkfPose = adaptiveUkf.getPose();
 
+            // MT1 位姿仅在该帧 HIVE 倾角解算成功时才未被污染: 失败帧 getPose() 会回退为
+            // 未修正的原始位姿 (见 MT1Localizer 类注释), 因此不能混入轨迹与误差统计
+            boolean mt1Usable = mt1.isValid() && mt1.isHiveEstimated();
+
             // === 记录轨迹历史 ===
             addToHistory(pinpointHistory, pinpointPose);
-            addToHistory(mt1History, mt1Pose);
+            if (mt1Usable) {
+                addToHistory(mt1History, mt1Pose);
+            }
             addToHistory(ekfHistory, ekfPose);
             addToHistory(adaptiveHistory, adaptiveEkfPose);
             addToHistory(ukfHistory, ukfPose);
@@ -160,7 +170,7 @@ public class FusionTestOpMode extends LinearOpMode {
             // === A 键触发误差记录 ===
             boolean aPressed = gamepad1.a;
             if (aPressed && !prevAPressed) {
-                recordErrors(pinpointPose, mt1Pose, ekfPose, adaptiveEkfPose, ukfPose, adaptiveUkfPose);
+                recordErrors(pinpointPose, mt1Pose, mt1Usable, ekfPose, adaptiveEkfPose, ukfPose, adaptiveUkfPose);
             }
             prevAPressed = aPressed;
 
@@ -197,6 +207,7 @@ public class FusionTestOpMode extends LinearOpMode {
             // ============ Telemetry: MT1Localizer 实时质量指标 ============
             telemetry.addLine("--- MT1Localizer ---");
             telemetry.addData("MT1.valid",               mt1.isValid());
+            telemetry.addData("MT1.tagIds",              mt1.getTagIds());
             telemetry.addData("MT1.tagCount",            mt1.getTagCount());
             telemetry.addData("MT1.avgDist (m)",         mt1.getAvgDist());
             telemetry.addData("MT1.avgArea",             mt1.getAvgArea());
@@ -204,8 +215,17 @@ public class FusionTestOpMode extends LinearOpMode {
             telemetry.addData("MT1.maxFiducialSkew",     mt1.getMaxFiducialSkew());
             telemetry.addData("MT1.ambiguity (m)",       mt1.getAmbiguity());
             telemetry.addData("MT1.angularAmb (rad)",    mt1.getAngularAmbiguity());
-            telemetry.addData("MT1.captureLatency (s)",  mt1.getCaptureLatency());
+            telemetry.addData("MT1.captureLatency (ms)", mt1.getCaptureLatency());
             telemetry.addData("MT1.timestamp (s)",       mt1.getTimestamp());
+
+            // ============ Telemetry: MT1Localizer HIVE 观测 ============
+            telemetry.addLine("--- MT1Localizer HIVE ---");
+            telemetry.addData("MT1.hiveEstimated",       mt1.isHiveEstimated());
+            telemetry.addData("MT1.hiveState",           mt1.getHiveState());
+            telemetry.addData("MT1.hiveAngle (deg)",     Math.toDegrees(mt1.getHiveAngle()));
+            telemetry.addData("MT1.pitchCheckErr (deg)", mt1.getHivePitchCheckErrDeg());
+            telemetry.addData("MT1.rawZ (in)",           mt1.getRawZIn());
+            telemetry.addData("MT1.rawPitch (deg)",      Math.toDegrees(mt1.getRawPitch()));
 
             double[] std = mt1.getStdDevs();
             if (std != null && std.length >= 6) {
@@ -274,9 +294,11 @@ public class FusionTestOpMode extends LinearOpMode {
             packet.fieldOverlay().setStrokeWidth(2);
             Drawing.drawRobot(packet.fieldOverlay(), pinpointPose);
 
-            packet.fieldOverlay().setStroke("#FF9800");
-            packet.fieldOverlay().setStrokeWidth(2);
-            Drawing.drawRobot(packet.fieldOverlay(), mt1Pose);
+            if (mt1Usable) {
+                packet.fieldOverlay().setStroke("#FF9800");
+                packet.fieldOverlay().setStrokeWidth(2);
+                Drawing.drawRobot(packet.fieldOverlay(), mt1Pose);
+            }
 
             packet.fieldOverlay().setStroke("#E91E63");
             packet.fieldOverlay().setStrokeWidth(2);
@@ -317,16 +339,22 @@ public class FusionTestOpMode extends LinearOpMode {
             mt1.update();
             Pose2d pose = mt1.getPose();
 
+            // 仅 HIVE 倾角解算成功的帧可用于校准: 失败帧 getPose() 会回退为受污染的原始位姿
+            boolean usable = mt1.isValid() && mt1.isHiveEstimated();
+
             telemetry.addLine("--- Calibration (MT1) ---");
-            if (mt1.isValid()) {
+            if (usable) {
                 telemetry.addData("X (in)", "%.2f", pose.position.x);
                 telemetry.addData("Y (in)", "%.2f", pose.position.y);
                 telemetry.addData("Heading (deg)", "%.2f", Math.toDegrees(pose.heading.toDouble()));
             } else {
-                telemetry.addLine("No valid pose");
+                telemetry.addLine("No valid pose (需要 valid + hiveEstimated)");
             }
             telemetry.addData("Tag Count", mt1.getTagCount());
             telemetry.addData("Ambiguity (m)", "%.4f", mt1.getAmbiguity());
+            telemetry.addData("Hive State", mt1.getHiveState());
+            telemetry.addData("Hive Angle (deg)", "%.2f", Math.toDegrees(mt1.getHiveAngle()));
+            telemetry.addData("Pitch Check Err (deg)", "%.2f", mt1.getHivePitchCheckErrDeg());
 
             boolean a = gamepad1.a;
             if (a && !prevA && !isRecording) {
@@ -337,7 +365,7 @@ public class FusionTestOpMode extends LinearOpMode {
             prevA = a;
 
             if (isRecording) {
-                if (mt1.isValid()) {
+                if (usable) {
                     samples.add(pose);
                 }
                 if (System.currentTimeMillis() - recordingStartMs >= CALIB_DURATION_MS) {
@@ -377,16 +405,23 @@ public class FusionTestOpMode extends LinearOpMode {
 
     // ==================== 误差计算 ====================
 
-    private void recordErrors(Pose2d pp, Pose2d mt, Pose2d ek, Pose2d ae, Pose2d uk, Pose2d au) {
+    private void recordErrors(Pose2d pp, Pose2d mt, boolean mtUsable, Pose2d ek, Pose2d ae, Pose2d uk, Pose2d au) {
         Pose2d ref = new Pose2d(testX, testY, testHeading);
 
         errPinpointX     = pp.position.x - ref.position.x;
         errPinpointY     = pp.position.y - ref.position.y;
         errPinpointTheta = normalizeAngle(pp.heading.toDouble() - ref.heading.toDouble());
 
-        errMt1X          = mt.position.x - ref.position.x;
-        errMt1Y          = mt.position.y - ref.position.y;
-        errMt1Theta      = normalizeAngle(mt.heading.toDouble() - ref.heading.toDouble());
+        if (mtUsable) {
+            errMt1X      = mt.position.x - ref.position.x;
+            errMt1Y      = mt.position.y - ref.position.y;
+            errMt1Theta  = normalizeAngle(mt.heading.toDouble() - ref.heading.toDouble());
+        } else {
+            // 该帧 HIVE 倾角无解或被拒, MT1 位姿为未修正的受污染位姿, 不参与误差统计
+            errMt1X     = Double.NaN;
+            errMt1Y     = Double.NaN;
+            errMt1Theta = Double.NaN;
+        }
 
         errEkfX          = ek.position.x - ref.position.x;
         errEkfY          = ek.position.y - ref.position.y;
@@ -449,6 +484,10 @@ public class FusionTestOpMode extends LinearOpMode {
     }
 
     private static String formatErr(double dx, double dy, double dtheta) {
+        // MT1 误差在记录时刻 HIVE 倾角无解时被置为 NaN (见 recordErrors)
+        if (Double.isNaN(dx) || Double.isNaN(dy) || Double.isNaN(dtheta)) {
+            return "n/a";
+        }
         return String.format("(%+.2f, %+.2f, %+.1f°)",
                 dx, dy, Math.toDegrees(dtheta));
     }

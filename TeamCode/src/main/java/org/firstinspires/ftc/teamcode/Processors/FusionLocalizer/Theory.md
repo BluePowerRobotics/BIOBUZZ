@@ -649,8 +649,14 @@ adaptR()
   │
   └─→ 构造 SimpleMatrix(3x3) 对角 R (in²)  →  return R
 
-视觉更新 (仅当 mt1.isValid()):
-  adaptR() → setR(R) → gateVision(x, y, θ, GATE_THRESHOLD) 通过才 update(x, y, θ, timestamp)
+视觉更新门控 (mt1.isValid() && mt1.isHiveEstimated()):
+  ├─ isHiveEstimated() = false → 该帧 HIVE 倾角无解或被拒
+  │    (无标签 / 无解 / 取根超 CellUpAngle / 姿态交叉校验不通过 / 枢轴高度未标定)
+  │    → mt1.getPose() 回退为未经修正的受污染位姿, 整帧丢弃
+  └─ 通过 → adaptR() → setR(R) → gateVision(x, y, θ, GATE_THRESHOLD) 通过才 update(x, y, θ, timestamp)
+
+对照组 (EKFLocalizer / UKFLocalizer):
+  无马氏距离门控, 但同样要求 isValid() && isHiveEstimated()
 
 EKF/UKF:
   setQ(SimpleMatrix Q)   — 直接接收完整 Q 矩阵
