@@ -20,26 +20,23 @@ import java.util.LinkedList;
 import java.util.List;
 
 /**
- * 底盘 + 定位联调测试 (红方)。
+ * 底盘 + 定位联调测试 (蓝方)。
  *
- * <p>流程：
- * <ol>
- *   <li><b>视觉均值定初值</b>：开始后按 A，采集 {@link #CALIB_DURATION_MS} 毫秒内所有
- *       HIVE 解算成功 ({@code isValid() && isHiveEstimated()}) 的 MT1 位姿并取均值
- *       (位置算术平均 / 朝向圆周平均)，作为初始位姿 (参照 FusionTestOpMode)，随后进入驾驶；</li>
- *   <li><b>手柄操作</b>：左摇杆平移 + 右摇杆旋转；X 切换有头/无头；
- *       左扳机瞄准 Red_Audience_Down、右扳机瞄准 Red_Audience_Up (此时右摇杆失效)；
- *       A 复位到 {@link HypParams#ResetPoseRed}；</li>
- *   <li><b>实时可视化</b>：Dashboard 场地图上绘制当前位姿、行驶轨迹与两个球门位置；</li>
- *   <li><b>遥测</b>：打印 {@link RobotPosition#getHiveState()} 跟踪状态及 MT1 逐帧观测细节。</li>
- * </ol>
+ * <p>流程与 {@link ChassisTesterRed} 对称，区别仅在：
+ * <ul>
+ *   <li>加载 Limelight pipeline 1 (蓝方 HIVE 场地地图)</li>
+ *   <li>复位位姿为 {@link HypParams#ResetPoseBlue}</li>
+ *   <li>瞄准目标为 Blue_Audience_Up (左扳机) / Blue_Audience_Down (右扳机)</li>
+ *   <li>无头模式下操作手基础朝向为 -π/2 (见 Chassis)</li>
+ * </ul>
  *
- * <p>注意：MT1 的 {@code getPose()} 只在 HIVE 解算成功时才未被污染，
- * 因此校准与可视化均以 {@code isValid() && isHiveEstimated()} 作为可用判据。
+ * <p>开始后先按 A，采集 {@link #CALIB_DURATION_MS} 毫秒内所有 HIVE 解算成功
+ * ({@code isValid() && isHiveEstimated()}) 的 MT1 位姿并取均值作为初始位姿
+ * (参照 FusionTestOpMode)，随后进入手柄驾驶。
  */
 @Config
-@TeleOp(name = "ChassisTesterRed", group = "Test")
-public class ChassisTesterRed extends LinearOpMode {
+@TeleOp(name = "ChassisTesterBlue", group = "Test")
+public class ChassisTesterBlue extends LinearOpMode {
 
     /** 开始后视觉校准的采样时长 (毫秒)，Dashboard 可调 */
     public static int CALIB_DURATION_MS = 2000;
@@ -56,20 +53,20 @@ public class ChassisTesterRed extends LinearOpMode {
     public void runOpMode() throws InterruptedException {
         telemetry = new MultipleTelemetry(telemetry, FtcDashboard.getInstance().getTelemetry());
 
-        TeamColor teamColor = TeamColor.RED;
+        TeamColor teamColor = TeamColor.BLUE;
 
         // Chassis 构造时即完成 RobotPosition 初始化 (Limelight + 自适应 EKF)，
-        // 故先以 ResetPoseRed 作为 EKF 初值，待视觉校准取得均值后再 ResetPoseTo 覆盖。
+        // 故先以 ResetPoseBlue 作为 EKF 初值，待视觉校准取得均值后再 ResetPoseTo 覆盖。
         actionRunner = new ActionRunner();
-        chassis = new Chassis(hardwareMap, teamColor, actionRunner, telemetry, HypParams.ResetPoseRed);
+        chassis = new Chassis(hardwareMap, teamColor, actionRunner, telemetry, HypParams.ResetPoseBlue);
 
-        telemetry.addLine("=== ChassisTesterRed ===");
-        telemetry.addData("Team", "RED (Limelight pipeline 0)");
-        telemetry.addData("Fallback ResetPose", formatPose(HypParams.ResetPoseRed));
+        telemetry.addLine("=== ChassisTesterBlue ===");
+        telemetry.addData("Team", "BLUE (Limelight pipeline 1)");
+        telemetry.addData("Fallback ResetPose", formatPose(HypParams.ResetPoseBlue));
         telemetry.addLine("A (after start) = run vision calibration");
         telemetry.addLine("Left Stick = drive, Right Stick X = rotate");
-        telemetry.addLine("Left Trigger = aim Red Audience Down");
-        telemetry.addLine("Right Trigger = aim Red Audience Up");
+        telemetry.addLine("Left Trigger = aim Blue Audience Up");
+        telemetry.addLine("Right Trigger = aim Blue Audience Down");
         telemetry.addLine("X = toggle head / no-head mode");
         telemetry.update();
 
@@ -92,9 +89,9 @@ public class ChassisTesterRed extends LinearOpMode {
 
             // ---- 底盘：左摇杆平移；扳机进瞄准 (右摇杆失效，航向自动指向球门) ----
             if (gamepad1.left_trigger > 0.5) {
-                chassis.update(gamepad1.left_stick_x, gamepad1.left_stick_y, HypParams.RedAudienceDown);
+                chassis.update(gamepad1.left_stick_x, gamepad1.left_stick_y, HypParams.BlueAudienceUp);
             } else if (gamepad1.right_trigger > 0.5) {
-                chassis.update(gamepad1.left_stick_x, gamepad1.left_stick_y, HypParams.RedAudienceUp);
+                chassis.update(gamepad1.left_stick_x, gamepad1.left_stick_y, HypParams.BlueAudienceDown);
             } else {
                 chassis.update(gamepad1.left_stick_x, gamepad1.left_stick_y, gamepad1.right_stick_x);
             }
@@ -114,7 +111,7 @@ public class ChassisTesterRed extends LinearOpMode {
             boolean mt1Usable = mt1.isValid() && mt1.isHiveEstimated();
 
             // ---- 遥测：状态 / 位姿 ----
-            telemetry.addData("Team", "RED");
+            telemetry.addData("Team", "BLUE");
             telemetry.addData("useNoHeadMode", chassis.getUseNoHeadMode());
             telemetry.addData("Pose", formatPose(pose));
             telemetry.addData("Vx (in/s)", "%.2f", RobotPosition.getInstance().getVx());
@@ -150,11 +147,11 @@ public class ChassisTesterRed extends LinearOpMode {
             packet.fieldOverlay().setStroke("#FF9800");
             packet.fieldOverlay().setFill("#FF9800");
             packet.fieldOverlay().setStrokeWidth(2);
-            strokeGoal(packet, HypParams.RedAudienceUp);
-            strokeGoal(packet, HypParams.RedAudienceDown);
+            strokeGoal(packet, HypParams.BlueAudienceUp);
+            strokeGoal(packet, HypParams.BlueAudienceDown);
 
-            // 当前位姿 (红色)
-            packet.fieldOverlay().setStroke("#F44336");
+            // 当前位姿 (蓝色)
+            packet.fieldOverlay().setStroke("#3F51B5");
             packet.fieldOverlay().setStrokeWidth(2);
             Drawing.drawRobot(packet.fieldOverlay(), pose);
 
@@ -239,7 +236,7 @@ public class ChassisTesterRed extends LinearOpMode {
             telemetry.update();
         }
         // OpMode 被停止时才会执行到这里
-        return HypParams.ResetPoseRed;
+        return HypParams.ResetPoseBlue;
     }
 
     /** 位置算术平均，朝向圆周平均。 */

@@ -10,6 +10,7 @@ import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 
 import org.firstinspires.ftc.teamcode.Parameter.HypParams;
+import org.firstinspires.ftc.teamcode.Parameter.TeamColor;
 import org.firstinspires.ftc.teamcode.Processors.VisionLocalizer.MT1Localizer;
 import org.firstinspires.ftc.teamcode.RoadRunner.Drawing;
 
@@ -29,6 +30,8 @@ public class MT1Test extends LinearOpMode {
 
     /** 记录时长 (毫秒) */
     public static int RECORDING_DURATION_MS = 2000;
+    /** 测试团队颜色 */
+    public static TeamColor teamColor = TeamColor.RED;
 
     private MT1Localizer mt1;
 
@@ -49,9 +52,10 @@ public class MT1Test extends LinearOpMode {
 
         Limelight3A limelight = hardwareMap.get(Limelight3A.class, "limelight");
         limelight.start();
-        mt1 = new MT1Localizer(limelight);
+        mt1 = new MT1Localizer(limelight, teamColor);
 
         telemetry.addLine("MT1 Test Ready");
+        
         telemetry.addLine("A: record pose for " + RECORDING_DURATION_MS + " ms, then average");
         telemetry.update();
 

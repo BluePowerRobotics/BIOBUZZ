@@ -17,6 +17,7 @@ import org.firstinspires.ftc.teamcode.RoadRunner.Localizer;
 import org.firstinspires.ftc.teamcode.RoadRunner.PinpointLocalizer;
 import org.firstinspires.ftc.teamcode.Processors.D3Localizer.PinpointD3Localizer;
 import org.firstinspires.ftc.teamcode.Processors.VisionLocalizer.MT1Localizer;
+import org.firstinspires.ftc.teamcode.Parameter.TeamColor;
 import org.firstinspires.ftc.teamcode.utility.filter.EKF.EKF;
 
 /**
@@ -125,7 +126,7 @@ public class AdaptiveEKFLocalizer implements Localizer {
     // ==================== 构造 ====================
 
     /**
-     * D2 模式构造 (标准 2D 里程计)。
+     * D2 模式构造 (标准 2D 里程计), 默认红方 (Limelight pipeline 0)。
      *
      * @param hardwareMap    硬件映射
      * @param limelight      已启动的 Limelight3A 实例
@@ -134,23 +135,18 @@ public class AdaptiveEKFLocalizer implements Localizer {
      */
     public AdaptiveEKFLocalizer(HardwareMap hardwareMap, Limelight3A limelight,
                            String imuDeviceName, Pose2d initialPose) {
-        this.ekf = new EKF(initialPose.position.x, initialPose.position.y, initialPose.heading.toDouble());
-        this.odom = new PinpointLocalizer(hardwareMap, 0.001999, initialPose);
-        this.mt1 = new MT1Localizer(limelight);
-        this.hubImu = hardwareMap.get(IMU.class, imuDeviceName);
-        this.useD3 = false;
-        this.lastTimestamp = getNow();
+        this(hardwareMap, limelight, imuDeviceName, initialPose, false, TeamColor.RED);
     }
 
     /**
-     * D2 模式简化构造: 使用默认 IMU 名称 "imu", 初始位姿 (0,0,0)。
+     * D2 模式简化构造: 使用默认 IMU 名称 "imu", 初始位姿 (0,0,0), 默认红方。
      */
     public AdaptiveEKFLocalizer(HardwareMap hardwareMap, Limelight3A limelight) {
-        this(hardwareMap, limelight, "imu", new Pose2d(0, 0, 0));
+        this(hardwareMap, limelight, "imu", new Pose2d(0, 0, 0), false, TeamColor.RED);
     }
 
     /**
-     * D3 模式构造 (3D 斜坡补偿里程计)。
+     * D3 模式构造 (3D 斜坡补偿里程计), 默认红方 (Limelight pipeline 0)。
      *
      * @param hardwareMap    硬件映射
      * @param limelight      已启动的 Limelight3A 实例
@@ -159,13 +155,29 @@ public class AdaptiveEKFLocalizer implements Localizer {
      */
     public AdaptiveEKFLocalizer(HardwareMap hardwareMap, Limelight3A limelight,
                            String imuDeviceName, Pose2d initialPose, boolean useD3) {
+        this(hardwareMap, limelight, imuDeviceName, initialPose, useD3, TeamColor.RED);
+    }
+
+    /**
+     * 完整构造。
+     *
+     * @param hardwareMap    硬件映射
+     * @param limelight      已启动的 Limelight3A 实例
+     * @param imuDeviceName  IMU 设备名 (如 "imu")，供里程计和 adaptQ 共用
+     * @param initialPose    初始位姿 (x, y, heading)
+     * @param useD3          true 使用 D3 斜坡补偿里程计, false 使用标准 2D 里程计
+     * @param teamColor      队伍颜色: 红方加载 Limelight pipeline 0, 蓝方加载 pipeline 1
+     */
+    public AdaptiveEKFLocalizer(HardwareMap hardwareMap, Limelight3A limelight,
+                           String imuDeviceName, Pose2d initialPose, boolean useD3,
+                           TeamColor teamColor) {
         this.ekf = new EKF(initialPose.position.x, initialPose.position.y, initialPose.heading.toDouble());
         if (useD3) {
             this.odom = new PinpointD3Localizer(hardwareMap, 0.001999, imuDeviceName, initialPose);
         } else {
             this.odom = new PinpointLocalizer(hardwareMap, 0.001999, initialPose);
         }
-        this.mt1 = new MT1Localizer(limelight);
+        this.mt1 = new MT1Localizer(limelight, teamColor);
         this.hubImu = hardwareMap.get(IMU.class, imuDeviceName);
         this.useD3 = useD3;
         this.lastTimestamp = getNow();

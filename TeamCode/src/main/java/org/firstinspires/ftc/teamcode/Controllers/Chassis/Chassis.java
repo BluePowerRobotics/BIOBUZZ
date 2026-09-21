@@ -14,9 +14,10 @@
  import org.firstinspires.ftc.teamcode.Parameter.TeamColor;
 /*
 todo：
-1. 根据定位与球门位置，实现一键转向球门瞄准
-2. 瞄准状态下，一操右摇杆失效，左摇杆前后控制前进后退，左摇杆左右控制底盘绕球门旋转（始终指向球门）
-   无头时先旋转到有头再按有头控制。
+1. 根据定位与目标位置，实现一键转向目标瞄准
+2. 瞄准状态下，一操右摇杆失效，
+   有头时，左摇杆前后控制车与球门连线上的前进后退，左摇杆左右控制底盘绕球门旋转（始终指向球门）
+   无头时，左摇杆前后控制沿场地的前后平移，左摇杆左右控制沿场地的左右平移，但始终指向球门。
  */
 @Config
 public class Chassis {
@@ -26,6 +27,11 @@ public class Chassis {
     private boolean useNoHeadMode = HypParams.InitialUseNoHeadMode;
     private final Telemetry telemetry;
     private double lastKx = 0, lastKy = 0, lastKomega = 0;
+
+    /** 瞄准模式航向环 P 增益 (rad/s per rad)，Dashboard 可调 */
+    public static double aimKp = 3.0;
+    /** 瞄准模式角速度指令上限 (rad/s)，防止过冲 */
+    public static double aimMaxOmega = Math.PI;
 
     private final TeamColor teamColor;
 
@@ -39,7 +45,7 @@ public class Chassis {
             initPose = (teamColor == TeamColor.RED) ?
                     HypParams.startPoseRed : HypParams.startPoseBlue;
         }
-        RobotPosition.RobotPositioninit(hardwareMap, initPose);
+        RobotPosition.RobotPositioninit(hardwareMap, initPose, teamColor);
         this.drive = RobotPosition.getInstance().getDrive();
         this.actionRunner = actionRunner;
         this.telemetry = telemetry;
@@ -48,7 +54,7 @@ public class Chassis {
 
     public Chassis(HardwareMap hardwareMap, TeamColor teamColor, ActionRunner actionRunner, Telemetry telemetry, Pose2d startPose) {
         this.teamColor = teamColor;
-        RobotPosition.RobotPositioninit(hardwareMap, startPose);
+        RobotPosition.RobotPositioninit(hardwareMap, startPose, teamColor);
         this.drive = RobotPosition.getInstance().getDrive();
         this.actionRunner = actionRunner;
         this.telemetry = telemetry;
@@ -98,6 +104,70 @@ public class Chassis {
             }
         }
     }
+
+    /**
+     * 瞄准模式重载：右摇杆失效，航向自动锁定目标，左摇杆只控制平移。
+     *
+     * <p>目标方位角由定位位姿解算 des = atan2(targetY - y, targetX - x)，
+     * 经 P 环 ({@link #aimKp} / {@link #aimMaxOmega}) 输出角速度指令，且始终走最短转向方向。
+     *
+     * <ul>
+     *   <li><b>有头</b>（useNoHeadMode=false）：车头已锁定目标，机器人前方即"车-球门连线"方向，
+     *       左摇杆前后 = 沿连线前进后退，左摇杆左右 = 绕球门旋转（沿连线切向）；</li>
+     *   <li><b>无头</b>（useNoHeadMode=true）：左摇杆前后/左右 = 沿场地前后/左右平移，
+     *       摇杆方向由操作手坐标系旋转到机器人坐标系，同时车头始终指向目标。</li>
+     * </ul>
+     *
+     * @param Kx         左摇杆左右（FTC 惯例：右推为正）
+     * @param Ky         左摇杆前后（FTC 惯例：上推为负）
+     * @param targetPose 目标位置（仅取 x/y，heading 忽略）
+     */
+    public void update(double Kx, double Ky, Pose2d targetPose){
+        lastKx = Kx;
+        lastKy = Ky;
+        if(!actionRunner.isBusy()){
+            double forwardVel = -Ky;
+            double strafeVel = -Kx;
+            // 右摇杆失效：角速度由"始终指向目标"的航向环给出
+            double omega = aimOmega(targetPose);
+            if(useNoHeadMode){
+                // 无头：摇杆输入在操作手/场地坐标系中，旋转到机器人坐标系
+                double driverHeading = (teamColor == TeamColor.RED) ? Math.PI / 2 : -Math.PI / 2;
+                double theta = RobotPosition.getInstance().getTheta() - driverHeading;
+                double cos = Math.cos(theta);
+                double sin = Math.sin(theta);
+                double forwardRobot = forwardVel * cos + strafeVel * sin;
+                double strafeRobot = -forwardVel * sin + strafeVel * cos;
+                drive.setDrivePowers(new PoseVelocity2d(new Vector2d(forwardRobot, strafeRobot), omega));
+            }
+            else{
+                // 有头：车头锁定目标后，机器人前方即指向球门的方向
+                drive.setDrivePowers(new PoseVelocity2d(new Vector2d(forwardVel, strafeVel), omega));
+            }
+        }
+    }
+
+    /**
+     * todo：P控制不够精确，改成PD或PID
+     * 解算"始终指向目标"的角速度指令：目标在场地坐标系中的方位角
+     * des = atan2(targetY - y, targetX - x)，与当前航向求最短转向误差后做 P 控制并限幅。
+     *
+     * @param targetPose 目标位置（仅取 x/y）
+     * @return 角速度指令 (rad/s，逆时针为正)
+     */
+    private double aimOmega(Pose2d targetPose){
+        RobotPosition robotPosition = RobotPosition.getInstance();
+        double desiredHeading = Math.atan2(
+                targetPose.position.y - robotPosition.getY(),
+                targetPose.position.x - robotPosition.getX());
+        // 误差归一化到 [-π, π)，保证始终走最短转向方向
+        double error = Math.atan2(
+                Math.sin(desiredHeading - robotPosition.getTheta()),
+                Math.cos(desiredHeading - robotPosition.getTheta()));
+        double omega = aimKp * error;
+        return Math.max(-aimMaxOmega, Math.min(aimMaxOmega, omega));
+    }
+
     public void telemetry(){
         /*
         telemetry.addData("X",RobotPosition.getInstance().getX());

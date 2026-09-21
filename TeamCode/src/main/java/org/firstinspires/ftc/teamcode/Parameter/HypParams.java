@@ -73,12 +73,16 @@ public class HypParams {
     public static long AUTONOMOUS_DURATION_MS = 30000;
 
     /**
-     * 球门位置：
+     * 球门位置（瞄准目标点，仅 x/y 有意义，heading 忽略）：
      * Red_Audience_Up: (17.7, -12.75)
      * Red_Audience_Down: (-17.7, -12.75)
      * Blue_Audience_Up: (17.7, 12.75)
      * Blue_Audience_Down: (-17.7, 12.75)
      */
+    public static Pose2d RedAudienceUp = new Pose2d(17.7, -12.75, 0);
+    public static Pose2d RedAudienceDown = new Pose2d(-17.7, -12.75, 0);
+    public static Pose2d BlueAudienceUp = new Pose2d(17.7, 12.75, 0);
+    public static Pose2d BlueAudienceDown = new Pose2d(-17.7, 12.75, 0);
 
     // ==================== HIVE 单地图解算超参 ====================
     // 单位约定：长度一律英寸（与场地坐标系一致），角度一律度（变量名带 Deg 后缀），

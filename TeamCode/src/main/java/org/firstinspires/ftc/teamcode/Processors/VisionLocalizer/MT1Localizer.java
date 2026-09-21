@@ -1,5 +1,6 @@
 package org.firstinspires.ftc.teamcode.Processors.VisionLocalizer;
 
+import com.acmerobotics.dashboard.config.Config;
 import com.acmerobotics.roadrunner.Pose2d;
 import com.acmerobotics.roadrunner.PoseVelocity2d;
 import com.acmerobotics.roadrunner.Vector2d;
@@ -10,6 +11,7 @@ import com.qualcomm.hardware.limelightvision.Limelight3A;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.Pose3D;
 import org.firstinspires.ftc.teamcode.Parameter.HypParams;
+import org.firstinspires.ftc.teamcode.Parameter.TeamColor;
 import org.firstinspires.ftc.teamcode.RoadRunner.Localizer;
 
 import java.util.List;
@@ -31,9 +33,13 @@ import java.util.List;
  * {@code T' = T_rot(φ)·T}, 其中 {@code φ = -θ}。利用机器人贴地约束 (z ≈ 0) 解出 φ,
  * 再复原真实位姿并得到倾角观测 θ = -φ。
  *
+ * <p><b>队伍颜色</b>: 构造时按 {@link TeamColor} 切换 Limelight pipeline
+ * (红方 0 / 蓝方 1), 以加载本方 HIVE 的场地地图; 不传颜色时默认红方。
+ *
  * <p><b>本类只输出逐帧观测</b> (倾角与瞬时状态), 不做时间滤波、不做状态保持 ——
  * 连续估计 (滤波 / 滞回 / 保持上一次状态) 由 RobotPosition 等外部模块负责。
  */
+@Config
 public class MT1Localizer implements Localizer {
 
     /** HIVE 抬升状态: 逐帧瞬时分类, 不含滞回 (MT1Localizer.md §3.4) */
@@ -52,6 +58,11 @@ public class MT1Localizer implements Localizer {
 
     /** 单位转换: 1 m = 39.3701 in */
     private static final double M_TO_INCH = 39.37007874;
+
+    /** 红方使用的 Limelight pipeline 索引 */
+    private static final int PIPELINE_RED = 0;
+    /** 蓝方使用的 Limelight pipeline 索引 */
+    private static final int PIPELINE_BLUE = 1;
 
     // ---- 最新结果缓存 ----
     private LLResult latestResult;
@@ -105,12 +116,24 @@ public class MT1Localizer implements Localizer {
     // ==================== 构造 ====================
 
     /**
+     * 默认按红方初始化 (pipeline 0)。
+     *
      * @param limelight 已初始化并调用过 {@link Limelight3A#start()} 的 Limelight3A 实例
      */
     public MT1Localizer(Limelight3A limelight) {
+        this(limelight, TeamColor.RED);
+    }
+
+    /**
+     * @param limelight 已初始化并调用过 {@link Limelight3A#start()} 的 Limelight3A 实例
+     * @param teamColor 队伍颜色: {@link TeamColor#RED} 加载 pipeline 0, {@link TeamColor#BLUE} 加载 pipeline 1
+     */
+    public MT1Localizer(Limelight3A limelight, TeamColor teamColor) {
         this.limelight = limelight;
         this.valid = false;
         this.stdDevs = new double[6];
+        // 按队伍颜色切换 pipeline (红 0 / 蓝 1), 决定加载哪一方 HIVE 的场地地图
+        limelight.pipelineSwitch(teamColor == TeamColor.BLUE ? PIPELINE_BLUE : PIPELINE_RED);
     }
 
     // ==================== 核心更新 ====================

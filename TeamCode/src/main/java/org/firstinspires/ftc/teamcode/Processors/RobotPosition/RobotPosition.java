@@ -5,6 +5,7 @@ import android.graphics.Color;
 import com.acmerobotics.dashboard.config.Config;
 import com.acmerobotics.roadrunner.Pose2d;
 import com.acmerobotics.roadrunner.PoseVelocity2d;
+import com.qualcomm.hardware.limelightvision.Limelight3A;
 import com.qualcomm.robotcore.hardware.HardwareMap;
 import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.robotcore.hardware.NormalizedColorSensor;
@@ -13,18 +14,27 @@ import com.qualcomm.robotcore.hardware.NormalizedRGBA;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
 
-import org.firstinspires.ftc.teamcode.RoadRunner.Localizer;
+import org.firstinspires.ftc.teamcode.Parameter.TeamColor;
+import org.firstinspires.ftc.teamcode.Processors.FusionLocalizer.AdaptiveEKFLocalizer;
+import org.firstinspires.ftc.teamcode.Processors.VisionLocalizer.MT1Localizer;
 import org.firstinspires.ftc.teamcode.RoadRunner.MecanumDrive;
 import org.firstinspires.ftc.teamcode.utility.Geometry.ConvexPolygon;
 import org.firstinspires.ftc.teamcode.Parameter.HypParams;
 import org.firstinspires.ftc.teamcode.utility.filter.EMA;
 
-//todo：改为Adaptive EKF，并通过MT1Localizer观测结果估计hive状态
 @Config
 public class RobotPosition {
     static MecanumDrive drive;
     HardwareMap hardwareMap;
-    Localizer localizer;
+
+    /** 融合定位器：Pinpoint 速度 + Limelight 视觉 + 自适应 EKF（权威位姿来源） */
+    private AdaptiveEKFLocalizer fusionLocalizer;
+
+    /**
+     * HIVE 状态跟踪值：MT1 有观测时更新为观测值，无观测 / 解算被拒时保持上一状态。
+     * 初值取 MIDDLE（HIVE 水平），跟踪值不会为 {@link MT1Localizer.HiveState#UNKNOWN}。
+     */
+    private MT1Localizer.HiveState hiveState = MT1Localizer.HiveState.MIDDLE;
 
     /** IMU，复用 Road Runner 已初始化的实例（设备名 "imu"） */
     private IMU imu;
@@ -44,50 +54,72 @@ public class RobotPosition {
     }
 
 ;
+    /**
+     * 按红方初始化（Limelight pipeline 0）。
+     */
     public static RobotPosition RobotPositioninit(HardwareMap hardwareMap, Pose2d initpose) {
+        return RobotPositioninit(hardwareMap, initpose, TeamColor.RED);
+    }
+
+    /**
+     * @param hardwareMap 硬件映射
+     * @param initpose    初始位姿
+     * @param teamColor   队伍颜色: 红方加载 Limelight pipeline 0, 蓝方加载 pipeline 1
+     */
+    public static RobotPosition RobotPositioninit(HardwareMap hardwareMap, Pose2d initpose,
+                                                  TeamColor teamColor) {
 
         instance=new RobotPosition();
         instance.hardwareMap = hardwareMap;
 
         instance.currentPose = initpose != null ? initpose : new Pose2d(0,0,0);
         instance.drive=new MecanumDrive(hardwareMap,instance.currentPose);
-        instance.localizer=instance.drive.localizer;
         // IMU 复用 Road Runner 已初始化的实例
         instance.imu = instance.drive.lazyImu.get();
+
+        // ---- 接入 AdaptiveEKFLocalizer：Pinpoint 速度预测 + Limelight 视觉更新 + 自适应 Q/R ----
+        // 融合位姿在 update() 中写回 RoadRunner（drive.localizer.setPose），作为权威输出；
+        // MecanumDrive 自带的 DriveLocalizer 只负责轨迹跟随期间的里程计兜底。
+        // 队伍颜色决定 Limelight pipeline（红 0 / 蓝 1），由 MT1Localizer 按颜色切换。
+        Limelight3A limelight = hardwareMap.get(Limelight3A.class, "limelight");
+        limelight.start();
+        instance.fusionLocalizer = new AdaptiveEKFLocalizer(
+                hardwareMap, limelight, "imu", instance.currentPose, false, teamColor);
         return instance;
     }
 
     /**
-     * 使用 localizer 自带的 setPose 方法重置机器人的位姿。
-     * 各 localizer 实现（如 PinpointLocalizer）会正确处理内部状态，
-     * 无需手动维护修正偏移量。
+     * 使用融合定位器自带的 setPose 方法重置机器人的位姿，
+     * 并同步 RoadRunner 内部里程计，避免轨迹规划读到旧位姿。
      *
      * @param pose 目标位姿（真实位姿）
      */
     public void ResetPoseTo(Pose2d pose) {
-        localizer.setPose(pose);
+        fusionLocalizer.setPose(pose);   // 复位 EKF 状态与 Pinpoint
+        drive.localizer.setPose(pose);   // 同步 RoadRunner 内部里程计
         currentPose = pose;
     }
 
-    // 每帧调用：更新定位器并返回当前位姿
+    // 每帧调用：推进融合定位器并返回当前位姿
     public Pose2d update() {
-        currentVelocity2d = drive.updatePoseEstimate();
+        // 1. RoadRunner 内置里程计先推进：保持 DriveLocalizer 的编码器/IMU 增量连续
+        //    （轨迹跟随等 RoadRunner Actions 会直接调用它，不能让它落后于当前时刻）
+        drive.updatePoseEstimate();
 
-        if (instance.localizer != null) {
-            try {
-                // 位姿已在 drive.updatePoseEstimate() → localizer.update() 中更新完毕，
-                // 此处只需读取最新位姿，不再重复调用 localizer.update()
-                // instance.localizer.update();
-                Pose2d p = instance.localizer.getPose();
-                if (p != null) {
-                    instance.currentPose = p;
-                }
-            } catch (Exception ignored) {
-                // 如果 localizer 的方法抛异常，保持现有 pose
-            }
+        // 2. 自适应 EKF：Pinpoint 速度预测 + Limelight MT1 视觉更新（自适应 Q/R + 马氏门控）
+        currentVelocity2d = fusionLocalizer.update();
+
+        // 3. HIVE 状态跟踪：MT1 成功解出倾角观测时更新，否则保持上一状态
+        MT1Localizer mt1 = fusionLocalizer.getMT1();
+        if (mt1.isHiveEstimated()) {
+            hiveState = mt1.getHiveState();
         }
-        org.firstinspires.ftc.teamcode.utility.Vector2D pose = new org.firstinspires.ftc.teamcode.utility.Vector2D(instance.getX(), instance.getY());
-        return instance.currentPose;
+
+        // 4. 以融合位姿为权威，写回 RoadRunner，供轨迹规划与瞄准使用
+        Pose2d fused = fusionLocalizer.getPose();
+        drive.localizer.setPose(fused);
+        currentPose = fused;
+        return currentPose;
     }
 
 
@@ -109,6 +141,15 @@ public class RobotPosition {
         return -vxField * Math.sin(theta) + vyField * Math.cos(theta);
     }
     public MecanumDrive getDrive(){return drive;}
+    /** @return 自适应 EKF 融合定位器（可读取 MT1 HIVE 倾角/状态观测与 Q、R 调试量） */
+    public AdaptiveEKFLocalizer getFusionLocalizer(){return fusionLocalizer;}
+
+    /**
+     * @return 当前跟踪的 HIVE 状态 (MIDDLE / AUDIENCE_UP / AUDIENCE_DOWN)。
+     *         在 {@link #update()} 中于 MT1 成功解出倾角观测时更新为观测值，
+     *         无观测 / 解算被拒时保持上一状态，永不为 UNKNOWN。
+     */
+    public MT1Localizer.HiveState getHiveState(){return hiveState;}
     public double getOmega(){return currentVelocity2d.angVel;}
 
     // ---- IMU 功能（原 IMUSensor.java 合并于此） ----
