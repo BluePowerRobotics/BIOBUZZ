@@ -102,6 +102,10 @@ public class Chassis {
             else{
                 drive.setDrivePowers(new PoseVelocity2d(new Vector2d(forwardVel, strafeVel), omega));
             }
+        } else {
+            // Action 运行期间手柄输入被屏蔽，此时主动刹停，避免电机维持上一帧功率；
+            // 本帧稍后由 ActionRunner.update() 下发实际的驱动指令
+            stop();
         }
     }
 
@@ -144,6 +148,9 @@ public class Chassis {
                 // 有头：车头锁定目标后，机器人前方即指向球门的方向
                 drive.setDrivePowers(new PoseVelocity2d(new Vector2d(forwardVel, strafeVel), omega));
             }
+        } else {
+            // Action 运行期间手柄输入被屏蔽，此时主动刹停（同普通重载）
+            stop();
         }
     }
 

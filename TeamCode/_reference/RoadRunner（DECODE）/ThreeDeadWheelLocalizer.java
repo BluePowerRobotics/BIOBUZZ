@@ -15,7 +15,7 @@ import com.acmerobotics.roadrunner.ftc.RawEncoder;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.HardwareMap;
 
-import org.firstinspires.ftc.teamcode.RoadRunner.messages.ThreeDeadWheelInputsMessage;
+import org.firstinspires.ftc.teamcode.messages.ThreeDeadWheelInputsMessage;
 
 /**
  * 三轮全向定位器实现

@@ -41,10 +41,10 @@ import com.qualcomm.robotcore.hardware.VoltageSensor;
 
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
-import org.firstinspires.ftc.teamcode.RoadRunner.messages.DriveCommandMessage;
-import org.firstinspires.ftc.teamcode.RoadRunner.messages.MecanumCommandMessage;
-import org.firstinspires.ftc.teamcode.RoadRunner.messages.MecanumLocalizerInputsMessage;
-import org.firstinspires.ftc.teamcode.RoadRunner.messages.PoseMessage;
+import org.firstinspires.ftc.teamcode.messages.DriveCommandMessage;
+import org.firstinspires.ftc.teamcode.messages.MecanumCommandMessage;
+import org.firstinspires.ftc.teamcode.messages.MecanumLocalizerInputsMessage;
+import org.firstinspires.ftc.teamcode.messages.PoseMessage;
 
 import java.lang.Math;
 import java.util.Arrays;
@@ -156,20 +156,7 @@ public final class MecanumDrive {
      * 定位器实例
      */
     public final Localizer localizer;
-
-    /**
-     * 最近一次 {@link #updatePoseEstimate()} 推进定位器得到的速度估计。
-     * 轨迹 / 转向 Action 复用该缓存值而不再次推进定位器，
-     * 保证定位器（尤其是带视觉观测的 EKF）每帧只被更新一次。
-     */
-    private PoseVelocity2d lastVelocity = new PoseVelocity2d(new Vector2d(0, 0), 0);
-
-    /** 定位器推进序号：{@link #updatePoseEstimate()} 每推进一次自增 */
-    private long poseUpdateSeq = 0;
-
-    /** Action 上一次观察到的推进序号，用于判断本帧是否已有人推进过定位器 */
-    private long poseUpdateSeqSeenByAction = 0;
-
+    
     /**
      * 位姿历史记录，用于绘制轨迹
      */
@@ -545,8 +532,8 @@ public final class MecanumDrive {
             Pose2dDual<Time> txWorldTarget = timeTrajectory.get(t);
             targetPoseWriter.write(new PoseMessage(txWorldTarget.value()));
 
-            // 复用本帧已推进的位姿与速度；若调用方未推进定位器（如 Actions.runBlocking），此处自行补上
-            PoseVelocity2d robotVelRobot = updatePoseEstimateFromAction();
+            // 更新位姿估计
+            PoseVelocity2d robotVelRobot = updatePoseEstimate();
 
             // 计算控制命令
             PoseVelocity2dDual<Time> command = new HolonomicController(
@@ -676,8 +663,8 @@ public final class MecanumDrive {
             Pose2dDual<Time> txWorldTarget = turn.get(t);
             targetPoseWriter.write(new PoseMessage(txWorldTarget.value()));
 
-            // 复用本帧已推进的位姿与速度；若调用方未推进定位器（如 Actions.runBlocking），此处自行补上
-            PoseVelocity2d robotVelRobot = updatePoseEstimateFromAction();
+            // 更新位姿估计
+            PoseVelocity2d robotVelRobot = updatePoseEstimate();
 
             // 计算控制命令
             PoseVelocity2dDual<Time> command = new HolonomicController(
@@ -738,23 +725,16 @@ public final class MecanumDrive {
     }
 
     /**
-     * 推进定位器并更新位姿历史。
-     *
-     * <p>主循环中应每帧由 {@code RobotPosition#update()} 在循环顶部调用一次。
-     * 轨迹 / 转向 Action 内部通过 {@link #updatePoseEstimateFromAction()} 复用本帧结果，
-     * 不会重复推进；即使调用方未推进（例如 tuning 的 {@code Actions.runBlocking}），
-     * Action 也会自行补上一次，保证位姿不会冻结。
-     *
+     * 更新位姿估计
      * @return 当前速度估计
      */
     public PoseVelocity2d updatePoseEstimate() {
         // 更新定位器
-        lastVelocity = localizer.update();
-        poseUpdateSeq++;
-
+        PoseVelocity2d vel = localizer.update();
+        
         // 添加到位姿历史
         poseHistory.add(localizer.getPose());
-
+        
         // 保持历史记录大小
         while (poseHistory.size() > 100) {
             poseHistory.removeFirst();
@@ -762,38 +742,8 @@ public final class MecanumDrive {
 
         // 记录估计位姿
         estimatedPoseWriter.write(new PoseMessage(localizer.getPose()));
-
-        return lastVelocity;
-    }
-
-    /**
-     * 取当前位姿估计，不推进定位器。
-     */
-    public Pose2d getPoseEstimate() {
-        return localizer.getPose();
-    }
-
-    /**
-     * 取最近一次 {@link #updatePoseEstimate()} 的速度估计，不推进定位器。
-     */
-    public PoseVelocity2d getLastVelocity() {
-        return lastVelocity;
-    }
-
-    /**
-     * 供 RoadRunner Action 每帧调用：优先复用本帧已推进的结果；
-     * 若自本 Action 上次调用以来无人推进过定位器（说明当前不在
-     * {@code RobotPosition#update()} 驱动的主循环里，例如 tuning 的
-     * {@code Actions.runBlocking}），则就地推进一次，避免位姿与速度永久冻结。
-     *
-     * @return 当前速度估计
-     */
-    private PoseVelocity2d updatePoseEstimateFromAction() {
-        if (poseUpdateSeq == poseUpdateSeqSeenByAction) {
-            updatePoseEstimate();
-        }
-        poseUpdateSeqSeenByAction = poseUpdateSeq;
-        return lastVelocity;
+        
+        return vel;
     }
 
     /**

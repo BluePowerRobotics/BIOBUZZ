@@ -126,6 +126,10 @@ public class ChassisTesterRed extends LinearOpMode {
             telemetry.addLine("--- HIVE (RobotPosition) ---");
             telemetry.addData("HiveState (tracked)", RobotPosition.getInstance().getHiveState());
 
+            // 执行动作队列（每帧一次）。Chassis 在动作运行期间屏蔽手柄输入，
+            // 因此这里必须在循环内调用，否则队列非空时底盘会一直被屏蔽。
+            actionRunner.update();
+
             // ---- 遥测：MT1 逐帧观测细节 (与跟踪值的来源对比) ----
             telemetry.addLine("--- MT1 observation ---");
             telemetry.addData("MT1.hiveEstimated", mt1.isHiveEstimated());

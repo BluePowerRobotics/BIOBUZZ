@@ -22,7 +22,7 @@ import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.AngularVelocity;
 import org.firstinspires.ftc.robotcore.external.navigation.UnnormalizedAngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
-import org.firstinspires.ftc.teamcode.RoadRunner.messages.TwoDeadWheelInputsMessage;
+import org.firstinspires.ftc.teamcode.messages.TwoDeadWheelInputsMessage;
 
 /**
  * 两轮全向定位器实现

@@ -73,52 +73,49 @@ public class RobotPosition {
         instance.hardwareMap = hardwareMap;
 
         instance.currentPose = initpose != null ? initpose : new Pose2d(0,0,0);
-        instance.drive=new MecanumDrive(hardwareMap,instance.currentPose);
-        // IMU 复用 Road Runner 已初始化的实例
-        instance.imu = instance.drive.lazyImu.get();
 
-        // ---- 接入 AdaptiveEKFLocalizer：Pinpoint 速度预测 + Limelight 视觉更新 + 自适应 Q/R ----
-        // 融合位姿在 update() 中写回 RoadRunner（drive.localizer.setPose），作为权威输出；
-        // MecanumDrive 自带的 DriveLocalizer 只负责轨迹跟随期间的里程计兜底。
+        // ---- 先构造融合定位器：Pinpoint 速度预测 + Limelight 视觉更新 + 自适应 Q/R ----
         // 队伍颜色决定 Limelight pipeline（红 0 / 蓝 1），由 MT1Localizer 按颜色切换。
         Limelight3A limelight = hardwareMap.get(Limelight3A.class, "limelight");
         limelight.start();
         instance.fusionLocalizer = new AdaptiveEKFLocalizer(
                 hardwareMap, limelight, "imu", instance.currentPose, false, teamColor);
+
+        // ---- 把融合定位器注入 RoadRunner，作为 MecanumDrive 唯一的定位器 ----
+        // 位姿与速度都直接来自 EKF，不再需要外部 setPose 回写；
+        // 定位器每帧仅由 RobotPosition.update() 调用一次 drive.updatePoseEstimate() 推进，
+        // 轨迹 / 转向 Action 内部改为复用该帧结果。
+        instance.drive = new MecanumDrive(hardwareMap, instance.fusionLocalizer);
+        // IMU 复用 Road Runner 已初始化的实例
+        instance.imu = instance.drive.lazyImu.get();
         return instance;
     }
 
     /**
-     * 使用融合定位器自带的 setPose 方法重置机器人的位姿，
-     * 并同步 RoadRunner 内部里程计，避免轨迹规划读到旧位姿。
+     * 重置机器人位姿。
+     * MecanumDrive 的 localizer 就是融合定位器本身，因此一次 setPose
+     * 即同时复位 EKF 状态与内部 Pinpoint 里程计。
      *
      * @param pose 目标位姿（真实位姿）
      */
     public void ResetPoseTo(Pose2d pose) {
-        fusionLocalizer.setPose(pose);   // 复位 EKF 状态与 Pinpoint
-        drive.localizer.setPose(pose);   // 同步 RoadRunner 内部里程计
+        drive.localizer.setPose(pose);
         currentPose = pose;
     }
 
     // 每帧调用：推进融合定位器并返回当前位姿
     public Pose2d update() {
-        // 1. RoadRunner 内置里程计先推进：保持 DriveLocalizer 的编码器/IMU 增量连续
-        //    （轨迹跟随等 RoadRunner Actions 会直接调用它，不能让它落后于当前时刻）
-        drive.updatePoseEstimate();
+        // 唯一推进点：每帧只调用一次，避免同一帧的视觉观测被重复计入 EKF
+        // （MecanumDrive 的轨迹 / 转向 Action 内部已改为复用本帧结果）
+        currentVelocity2d = drive.updatePoseEstimate();
 
-        // 2. 自适应 EKF：Pinpoint 速度预测 + Limelight MT1 视觉更新（自适应 Q/R + 马氏门控）
-        currentVelocity2d = fusionLocalizer.update();
-
-        // 3. HIVE 状态跟踪：MT1 成功解出倾角观测时更新，否则保持上一状态
+        // HIVE 状态跟踪：MT1 成功解出倾角观测时更新，否则保持上一状态
         MT1Localizer mt1 = fusionLocalizer.getMT1();
         if (mt1.isHiveEstimated()) {
             hiveState = mt1.getHiveState();
         }
 
-        // 4. 以融合位姿为权威，写回 RoadRunner，供轨迹规划与瞄准使用
-        Pose2d fused = fusionLocalizer.getPose();
-        drive.localizer.setPose(fused);
-        currentPose = fused;
+        currentPose = drive.localizer.getPose();
         return currentPose;
     }
 

@@ -99,6 +99,10 @@ public class TeleOpBlue extends LinearOpMode {
 
             // ======== 更新 & 遥测 ========
 
+            // 执行动作队列（每帧一次）。Chassis 在动作运行期间屏蔽手柄输入，
+            // 因此这里必须在循环内调用，否则队列非空时底盘会一直被屏蔽。
+            actionRunner.update();
+
             sweeper.update();
 
             telemetry.addData("Team", teamColor == TeamColor.BLUE ? "BLUE" : "RED");
