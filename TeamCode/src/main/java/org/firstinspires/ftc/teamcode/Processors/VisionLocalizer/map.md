@@ -1,3 +1,4 @@
+# 该方案已废弃
 以下是 Limelight 3A 上传 AprilTag Map 的具体接口实现方案，涵盖 REST API 规范、Java 代码示例以及与 HIVE 状态机的集成方式。
 
 ***
